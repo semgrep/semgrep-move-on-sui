@@ -2350,7 +2350,59 @@ let map_module_definition (env : env) ((v1, v2, v3) : CST.module_definition) =
 let map_source_file (env : env) (xs : CST.source_file) =
   R.List (List.map (map_module_definition env) xs)
 
+let map_whitespace (env : env) (tok : CST.whitespace) =
+  (* pattern \s *) token env tok
+
+let map_empty_line (env : env) (tok : CST.empty_line) =
+  (* empty_line *) token env tok
+
+let map_block_comment (env : env) (tok : CST.block_comment) =
+  (* block_comment *) token env tok
+
+let map_line_comment (env : env) (tok : CST.line_comment) =
+  (* line_comment *) token env tok
+
+let map_annotation (env : env) ((v1, v2, v3, v4, v5) : CST.annotation) =
+  let v1 = (* "#[" *) token env v1 in
+  let v2 = map_annotation_item env v2 in
+  let v3 =
+    R.List (List.map (fun (v1, v2) ->
+      let v1 = (* "," *) token env v1 in
+      let v2 = map_annotation_item env v2 in
+      R.Tuple [v1; v2]
+    ) v3)
+  in
+  let v4 =
+    (match v4 with
+    | Some tok -> R.Option (Some (
+        (* "," *) token env tok
+      ))
+    | None -> R.Option None)
+  in
+  let v5 = (* "]" *) token env v5 in
+  R.Tuple [v1; v2; v3; v4; v5]
+
 let dump_tree root =
   map_source_file () root
-  |> Tree_sitter_run.Raw_tree.to_string
-  |> print_string
+  |> Tree_sitter_run.Raw_tree.to_channel stdout
+
+let map_extra (env : env) (x : CST.extra) =
+  match x with
+  | Whitespace (_loc, x) -> ("whitespace", "whitespace", map_whitespace env x)
+  | Line_comment (_loc, x) -> ("line_comment", "line_comment", map_line_comment env x)
+  | Block_comment (_loc, x) -> ("block_comment", "block_comment", map_block_comment env x)
+  | Empty_line (_loc, x) -> ("empty_line", "empty_line", map_empty_line env x)
+  | Annotation (_loc, x) -> ("annotation", "annotation", map_annotation env x)
+
+let dump_extras (extras : CST.extras) =
+  List.iter (fun extra ->
+    let ts_rule_name, ocaml_type_name, raw_tree = map_extra () extra in
+    let details =
+      if ocaml_type_name <> ts_rule_name then
+        Printf.sprintf " (OCaml type '%s')" ocaml_type_name
+      else
+        ""
+    in
+    Printf.printf "%s%s:\n" ts_rule_name details;
+    Tree_sitter_run.Raw_tree.to_channel stdout raw_tree
+  ) extras
