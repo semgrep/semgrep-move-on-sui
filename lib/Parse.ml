@@ -5868,23 +5868,23 @@ let translate_extra src (node : Tree_sitter_output_t.node) : CST.extra option =
   | "whitespace" ->
       (match translate_tree src node trans_whitespace with
       | None -> None
-      | Some x -> Some (Whitespace (Run.get_loc node, x)))
+      | Some x -> Some (`Whitespace (Run.get_loc node, x)))
   | "line_comment" ->
       (match translate_tree src node trans_line_comment with
       | None -> None
-      | Some x -> Some (Line_comment (Run.get_loc node, x)))
+      | Some x -> Some (`Line_comment (Run.get_loc node, x)))
   | "block_comment" ->
       (match translate_tree src node trans_block_comment with
       | None -> None
-      | Some x -> Some (Block_comment (Run.get_loc node, x)))
+      | Some x -> Some (`Block_comment (Run.get_loc node, x)))
   | "empty_line" ->
       (match translate_tree src node trans_empty_line with
       | None -> None
-      | Some x -> Some (Empty_line (Run.get_loc node, x)))
+      | Some x -> Some (`Empty_line (Run.get_loc node, x)))
   | "annotation" ->
       (match translate_tree src node trans_annotation with
       | None -> None
-      | Some x -> Some (Annotation (Run.get_loc node, x)))
+      | Some x -> Some (`Annotation (Run.get_loc node, x)))
   | _ -> None
 
 let translate_root src root_node =

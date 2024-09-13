@@ -2388,11 +2388,11 @@ let dump_tree root =
 
 let map_extra (env : env) (x : CST.extra) =
   match x with
-  | Whitespace (_loc, x) -> ("whitespace", "whitespace", map_whitespace env x)
-  | Line_comment (_loc, x) -> ("line_comment", "line_comment", map_line_comment env x)
-  | Block_comment (_loc, x) -> ("block_comment", "block_comment", map_block_comment env x)
-  | Empty_line (_loc, x) -> ("empty_line", "empty_line", map_empty_line env x)
-  | Annotation (_loc, x) -> ("annotation", "annotation", map_annotation env x)
+  | `Whitespace (_loc, x) -> ("whitespace", "whitespace", map_whitespace env x)
+  | `Line_comment (_loc, x) -> ("line_comment", "line_comment", map_line_comment env x)
+  | `Block_comment (_loc, x) -> ("block_comment", "block_comment", map_block_comment env x)
+  | `Empty_line (_loc, x) -> ("empty_line", "empty_line", map_empty_line env x)
+  | `Annotation (_loc, x) -> ("annotation", "annotation", map_annotation env x)
 
 let dump_extras (extras : CST.extras) =
   List.iter (fun extra ->

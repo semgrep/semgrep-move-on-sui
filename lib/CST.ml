@@ -1261,12 +1261,12 @@ type enum_definition (* inlined *) = (
   * postfix_ability_decls option
 )
 
-type extra = 
-    Whitespace of Loc.t * whitespace
-  | Line_comment of Loc.t * line_comment
-  | Block_comment of Loc.t * block_comment
-  | Empty_line of Loc.t * empty_line
-  | Annotation of Loc.t * annotation
-
+type extra = [
+    `Whitespace of Loc.t * whitespace
+  | `Line_comment of Loc.t * line_comment
+  | `Block_comment of Loc.t * block_comment
+  | `Empty_line of Loc.t * empty_line
+  | `Annotation of Loc.t * annotation
+]
 
 type extras = extra list
