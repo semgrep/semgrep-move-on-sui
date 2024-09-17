@@ -28,17 +28,21 @@ const PRECEDENCE = {
 }
 
 module.exports = grammar({
-  name: 'move',
-  extras: $ => [$._whitespace, $.line_comment, $.block_comment, $.empty_line, $.annotation],
+  name: 'move_on_sui',
+  extras: $ => [$._whitespace, $.line_comment, $.block_comment, $.newline, $.annotation],
   word: $ => $.identifier,
   supertypes: $ => [$._spec_block_target],
   conflicts: $ => [
+    [$.annotation_expr, $.module_access],
     [$._expression, $._expression_term],
     [$.function_type_parameters],
     [$.name_expression, $.call_expression, $.pack_expression],
     [$.module_access, $._variable_identifier],
     [$.modifier, $.native_struct_definition],
     [$._expression, $._binary_operand],
+  ],
+  inline: $ => [
+    $._dot_or_index_chain,
   ],
 
   rules: {
@@ -116,25 +120,23 @@ module.exports = grammar({
       "]"
     ),
 
-    annotation_item: $ => choice(
+    annotation_expr: $ => choice(
       field("name", $.identifier),
       seq(
-        field("name", $.identifier),
-        "=",
-        field("value", $._literal_value)
+        field("name", $.identifier), "=", field("value", choice(field("local_const", seq('::', $.module_access)), $.module_access, $._literal_value))
       ),
-      seq(
-        field("name", $.identifier),
-        "(",
-        sepBy1(",", choice($._literal_value, $.module_access)),
-        ")"
-      ),
-      seq(
-        field("name", $.identifier),
-        "(",
-        sepBy1(",", seq($.identifier, '=', choice($.module_access, $._literal_value))),
-        ")"
-      ),
+    ),
+
+    annotation_list: $ => seq(
+      field("name", $.identifier),
+      "(",
+      sepBy1(",", choice($._literal_value, $.annotation_item, $.module_access, field("local_const", seq('::', $.module_access)))),
+      ")"
+    ),
+
+    annotation_item: $ => choice(
+      field("annotation_expr", $.annotation_expr),
+      field("annotation_list", $.annotation_list),
     ),
 
     // Constants
@@ -455,6 +457,8 @@ module.exports = grammar({
     module_access: $ => choice(
       // macro variable access
       seq('$', field('member', $.identifier)),
+      // address access
+      seq('@', field('member', $.identifier)),
       field('member', alias($._reserved_identifier, $.identifier)),
       field('member', $.identifier),
       seq(
@@ -467,6 +471,7 @@ module.exports = grammar({
         '::',
         field('member', $.identifier)
       ),
+      seq($.module_identity, '::', field('enum_name', $.identifier), '::', field('variant', $.identifier)),
     ),
 
     friend_access: $ => choice(
@@ -514,9 +519,15 @@ module.exports = grammar({
     // type parameter grammar
     type_parameters: $ => seq('<', sepBy1(',', $.type_parameter), '>'),
     type_parameter: $ => seq(
-      optional('$'),
-      optional('phantom'),
-      $._type_parameter_identifier,
+      choice(
+        prec(5,seq(
+        '$',
+        optional('phantom'),
+        $._type_parameter_identifier)),
+        seq(
+          optional('phantom'),
+          $._type_parameter_identifier),   
+      ),
       optional(seq(':',
         sepBy1('+', $.ability)
       ))
@@ -550,6 +561,8 @@ module.exports = grammar({
     // Expression
 
     _expression: $ => choice(
+      $.call_expression,
+      $.macro_call_expression,
       $.lambda_expression,
       $.if_expression,
       $.while_expression,
@@ -728,6 +741,7 @@ module.exports = grammar({
       $.dereference_expression,
       $.move_or_copy_expression,
       $._expression_term,
+      $._dot_or_index_chain,
     )),
     unary_expression: $ => seq(
       field('op', $.unary_op),
@@ -748,7 +762,7 @@ module.exports = grammar({
     // move or copy
     move_or_copy_expression: $ => prec(PRECEDENCE.unary, seq(
       choice('move', 'copy'),
-      field('expr', $._variable_identifier),
+      field('expr', $._expression),
     )),
 
     _expression_term: $ => choice(
@@ -756,18 +770,17 @@ module.exports = grammar({
       $.continue_expression,
       $.name_expression,
       $.call_expression,
-      $.macro_call_expression,
+      $.macro_call_expression, 
       $.pack_expression,
       $._literal_value,
       $.unit_expression,
       $.expression_list,
-      $.annotate_expression,
+      $.annotation_expression,
       $.block,
       $.spec_block,
       $.if_expression,
-
-      $.dot_expression,
-      $.index_expression,
+      $.vector_expression,
+      $.match_expression,
     ),
     break_expression: $ => seq(
       'break',
@@ -817,7 +830,7 @@ module.exports = grammar({
       'as',
       field('ty', $._type),
     )),
-    annotate_expression: $ => seq(
+    annotation_expression: $ => seq(
       '(',
       field('expr', $._expression),
       ':',
@@ -825,17 +838,34 @@ module.exports = grammar({
       ')'
     ),
 
+    _dot_or_index_chain: $ => choice(
+      $.access_field,
+      $.receiver_call,
+      $.receiver_macro_call,
+      $.index_expression,
+      $._expression_term,
+    ),
 
-    dot_expression: $ => prec.left(PRECEDENCE.field, seq(
-      field('expr', $._expression_term),
-      '.',
-      field('access', $._expression_term),
-    )),
     index_expression: $ => prec.left(PRECEDENCE.call, seq(
       field('expr',
-        $._expression_term,
+        $._dot_or_index_chain,
       ),
-      '[', field('idx', $._expression), ']'
+      '[', sepBy(',', field('idx', $._expression)), ']'
+    )),
+    receiver_call: $ => prec.left(PRECEDENCE.call, seq(
+      field('receiver', $._dot_or_index_chain), '.', field('func', $.identifier),
+      // TODO: read type arguments, they way ther are implemented, they conflict with a 
+      // x.y < z binary expression.
+      field('arguments', $.arg_list),
+    )),
+    receiver_macro_call: $ => prec.left(PRECEDENCE.call, seq(
+      field('receiver', $._dot_or_index_chain), '.', field('func', $.identifier),
+       "!",
+       optional(field('type_arguments', $.type_arguments)),
+      field('arguments', $.arg_list),
+    )),
+    access_field: $ => prec.left(PRECEDENCE.field, seq(
+      field('object', $._dot_or_index_chain), '.',field('field', choice($._expression)),
     )),
 
     // Expression end
@@ -872,20 +902,22 @@ module.exports = grammar({
       $.bind_positional_fields,
       $.bind_named_fields,
     ),
+    _spread_operator: _$ => '..',
     bind_positional_fields: $ => seq(
       '(', sepBy(',', $.bind_field), ')'
     ),
     bind_named_fields: $ => seq(
       '{', sepBy(',', $.bind_field), '}'
     ),
-    bind_field: $ => seq(
+    // not sure if it should be here
+    bind_field: $ => choice(seq(
       optional('mut'),
-      field('field', $._field_identifier), // direct bind
+      field('field', choice($._expression)), // direct bind
       optional(seq(
         ':',
         field('bind', $._bind)
       ))
-    ),
+    ), $._spread_operator),
     // Fields and Bindings - End
 
     // literals
@@ -897,11 +929,14 @@ module.exports = grammar({
       $.byte_string_literal,
       // $.vector_literal,
     ),
+
     block_identifier: $ => seq($.label, ':'),
     label: $ => seq('\'', $.identifier),
     address_literal: $ => /@0x[a-fA-F0-9]+/,
     bool_literal: $ => choice('true', 'false'),
-    num_literal: $ => choice(/[0-9][0-9_]*(?:u8|u16|u32|u64|u128|u256)?/, /0x[a-fA-F0-9_]+/),
+    typed_num_literal: $ => /[0-9][0-9_]*(?:u8|u16|u32|u64|u128|u256)?/,
+    untyped_num_literal: $ => /0x[a-fA-F0-9_]+/,
+    num_literal: $ => choice($.typed_num_literal, $.untyped_num_literal),
     hex_string_literal: $ => /x"[0-9a-fA-F]*"/,
     byte_string_literal: $ => /b"(\\.|[^\\"])*"/,
     _module_identifier: $ => alias($.identifier, $.module_identifier),
@@ -922,7 +957,7 @@ module.exports = grammar({
     line_comment: $ => token(seq(
       '//', /.*/
     )),
-    empty_line: $ => token(seq(/[\n\r][\n\r]/)),
+    newline: $ => token(/\n/),
     _whitespace: $ => /\s/,
     // http://stackoverflow.com/questions/13014947/regex-to-match-a-c-style-multiline-comment/36328890#36328890
     block_comment: $ => token(seq(
