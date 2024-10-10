@@ -1119,7 +1119,7 @@ type spread_operator (* inlined *) = Token.t (* ".." *)
 
 type ellipsis (* inlined *) = Token.t (* "..." *)
 
-type newline (* inlined *) = [ ]
+type newline (* inlined *) = Token.t
 
 type forall (* inlined *) = Token.t (* "forall" *)
 
@@ -1301,3 +1301,13 @@ type macro_function_definition (* inlined *) = (
   * macro_signature
   * block
 )
+
+type extra = [
+    `Whitespace of Loc.t * whitespace
+  | `Line_comment of Loc.t * line_comment
+  | `Block_comment of Loc.t * block_comment
+  | `Newline of Loc.t * newline
+  | `Annotation of Loc.t * annotation
+]
+
+type extras = extra list

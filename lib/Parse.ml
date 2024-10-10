@@ -53,8 +53,10 @@ let children_regexps : (string * Run.exp option) list = [
       Token (Literal "bytearray");
     |];
   );
+  "whitespace", None;
   "spread_operator", None;
   "clean_identifier", None;
+  "block_comment", None;
   "untyped_num_literal", None;
   "spec_condition_kind",
   Some (
@@ -70,8 +72,10 @@ let children_regexps : (string * Run.exp option) list = [
   "exists", None;
   "hex_string_literal", None;
   "byte_string_literal", None;
+  "line_comment", None;
   "semgrep_metavar_var", None;
   "forall", None;
+  "newline", None;
   "spec_apply_name_pattern", None;
   "modifier",
   Some (
@@ -447,6 +451,24 @@ let children_regexps : (string * Run.exp option) list = [
       Token (Name "function_identifier");
     ];
   );
+  "annotation_expr",
+  Some (
+    Alt [|
+      Token (Name "identifier");
+      Seq [
+        Token (Name "identifier");
+        Token (Literal "=");
+        Alt [|
+          Seq [
+            Token (Literal "::");
+            Token (Name "module_access");
+          ];
+          Token (Name "module_access");
+          Token (Name "literal_value");
+        |];
+      ];
+    |];
+  );
   "apply_type",
   Some (
     Seq [
@@ -655,6 +677,50 @@ let children_regexps : (string * Run.exp option) list = [
       Token (Literal ";");
     ];
   );
+  "annotation_item",
+  Some (
+    Alt [|
+      Alt [|
+        Token (Name "annotation_expr");
+        Token (Name "annotation_list");
+      |];
+      Token (Name "ellipsis");
+    |];
+  );
+  "annotation_list",
+  Some (
+    Seq [
+      Token (Name "identifier");
+      Token (Literal "(");
+      Alt [|
+        Token (Name "literal_value");
+        Token (Name "annotation_item");
+        Token (Name "module_access");
+        Seq [
+          Token (Literal "::");
+          Token (Name "module_access");
+        ];
+      |];
+      Repeat (
+        Seq [
+          Token (Literal ",");
+          Alt [|
+            Token (Name "literal_value");
+            Token (Name "annotation_item");
+            Token (Name "module_access");
+            Seq [
+              Token (Literal "::");
+              Token (Name "module_access");
+            ];
+          |];
+        ];
+      );
+      Opt (
+        Token (Literal ",");
+      );
+      Token (Literal ")");
+    ];
+  );
   "field_annotation",
   Some (
     Alt [|
@@ -757,6 +823,23 @@ let children_regexps : (string * Run.exp option) list = [
       Token (Literal "native");
       Token (Name "struct_signature");
       Token (Literal ";");
+    ];
+  );
+  "annotation",
+  Some (
+    Seq [
+      Token (Literal "#[");
+      Token (Name "annotation_item");
+      Repeat (
+        Seq [
+          Token (Literal ",");
+          Token (Name "annotation_item");
+        ];
+      );
+      Opt (
+        Token (Literal ",");
+      );
+      Token (Literal "]");
     ];
   );
   "named_fields",
@@ -2141,6 +2224,10 @@ let trans_primitive_type ((kind, body) : mt) : CST.primitive_type =
       )
   | Leaf _ -> assert false
 
+let trans_whitespace ((kind, body) : mt) : CST.whitespace =
+  match body with
+  | Leaf v -> v
+  | Children _ -> assert false
 
 let trans_spread_operator ((kind, body) : mt) : CST.spread_operator =
   match body with
@@ -2152,6 +2239,10 @@ let trans_clean_identifier ((kind, body) : mt) : CST.clean_identifier =
   | Leaf v -> v
   | Children _ -> assert false
 
+let trans_block_comment ((kind, body) : mt) : CST.block_comment =
+  match body with
+  | Leaf v -> v
+  | Children _ -> assert false
 
 let trans_untyped_num_literal ((kind, body) : mt) : CST.untyped_num_literal =
   match body with
@@ -2206,6 +2297,10 @@ let trans_byte_string_literal ((kind, body) : mt) : CST.byte_string_literal =
   | Leaf v -> v
   | Children _ -> assert false
 
+let trans_line_comment ((kind, body) : mt) : CST.line_comment =
+  match body with
+  | Leaf v -> v
+  | Children _ -> assert false
 
 let trans_semgrep_metavar_var ((kind, body) : mt) : CST.semgrep_metavar_var =
   match body with
@@ -2217,6 +2312,10 @@ let trans_forall ((kind, body) : mt) : CST.forall =
   | Leaf v -> v
   | Children _ -> assert false
 
+let trans_newline ((kind, body) : mt) : CST.newline =
+  match body with
+  | Leaf v -> v
+  | Children _ -> assert false
 
 let trans_spec_apply_name_pattern ((kind, body) : mt) : CST.spec_apply_name_pattern =
   match body with
@@ -3069,6 +3168,50 @@ let trans_use_fun ((kind, body) : mt) : CST.use_fun =
       )
   | Leaf _ -> assert false
 
+let trans_annotation_expr ((kind, body) : mt) : CST.annotation_expr =
+  match body with
+  | Children v ->
+      (match v with
+      | Alt (0, v) ->
+          `Id (
+            trans_identifier (Run.matcher_token v)
+          )
+      | Alt (1, v) ->
+          `Id_EQ_choice_COLONCOLON_module_access (
+            (match v with
+            | Seq [v0; v1; v2] ->
+                (
+                  trans_identifier (Run.matcher_token v0),
+                  Run.trans_token (Run.matcher_token v1),
+                  (match v2 with
+                  | Alt (0, v) ->
+                      `COLONCOLON_module_access (
+                        (match v with
+                        | Seq [v0; v1] ->
+                            (
+                              Run.trans_token (Run.matcher_token v0),
+                              trans_module_access (Run.matcher_token v1)
+                            )
+                        | _ -> assert false
+                        )
+                      )
+                  | Alt (1, v) ->
+                      `Module_access (
+                        trans_module_access (Run.matcher_token v)
+                      )
+                  | Alt (2, v) ->
+                      `Lit_value (
+                        trans_literal_value (Run.matcher_token v)
+                      )
+                  | _ -> assert false
+                  )
+                )
+            | _ -> assert false
+            )
+          )
+      | _ -> assert false
+      )
+  | Leaf _ -> assert false
 
 let rec trans_apply_type ((kind, body) : mt) : CST.apply_type =
   match body with
@@ -3482,6 +3625,114 @@ let trans_use_declaration ((kind, body) : mt) : CST.use_declaration =
       )
   | Leaf _ -> assert false
 
+let rec trans_annotation_item ((kind, body) : mt) : CST.annotation_item =
+  match body with
+  | Children v ->
+      (match v with
+      | Alt (0, v) ->
+          `Choice_anno_expr (
+            (match v with
+            | Alt (0, v) ->
+                `Anno_expr (
+                  trans_annotation_expr (Run.matcher_token v)
+                )
+            | Alt (1, v) ->
+                `Anno_list (
+                  trans_annotation_list (Run.matcher_token v)
+                )
+            | _ -> assert false
+            )
+          )
+      | Alt (1, v) ->
+          `Ellips (
+            trans_ellipsis (Run.matcher_token v)
+          )
+      | _ -> assert false
+      )
+  | Leaf _ -> assert false
+
+and trans_annotation_list ((kind, body) : mt) : CST.annotation_list =
+  match body with
+  | Children v ->
+      (match v with
+      | Seq [v0; v1; v2; v3; v4; v5] ->
+          (
+            trans_identifier (Run.matcher_token v0),
+            Run.trans_token (Run.matcher_token v1),
+            (match v2 with
+            | Alt (0, v) ->
+                `Lit_value (
+                  trans_literal_value (Run.matcher_token v)
+                )
+            | Alt (1, v) ->
+                `Anno_item (
+                  trans_annotation_item (Run.matcher_token v)
+                )
+            | Alt (2, v) ->
+                `Module_access (
+                  trans_module_access (Run.matcher_token v)
+                )
+            | Alt (3, v) ->
+                `COLONCOLON_module_access (
+                  (match v with
+                  | Seq [v0; v1] ->
+                      (
+                        Run.trans_token (Run.matcher_token v0),
+                        trans_module_access (Run.matcher_token v1)
+                      )
+                  | _ -> assert false
+                  )
+                )
+            | _ -> assert false
+            )
+            ,
+            Run.repeat
+              (fun v ->
+                (match v with
+                | Seq [v0; v1] ->
+                    (
+                      Run.trans_token (Run.matcher_token v0),
+                      (match v1 with
+                      | Alt (0, v) ->
+                          `Lit_value (
+                            trans_literal_value (Run.matcher_token v)
+                          )
+                      | Alt (1, v) ->
+                          `Anno_item (
+                            trans_annotation_item (Run.matcher_token v)
+                          )
+                      | Alt (2, v) ->
+                          `Module_access (
+                            trans_module_access (Run.matcher_token v)
+                          )
+                      | Alt (3, v) ->
+                          `COLONCOLON_module_access (
+                            (match v with
+                            | Seq [v0; v1] ->
+                                (
+                                  Run.trans_token (Run.matcher_token v0),
+                                  trans_module_access (Run.matcher_token v1)
+                                )
+                            | _ -> assert false
+                            )
+                          )
+                      | _ -> assert false
+                      )
+                    )
+                | _ -> assert false
+                )
+              )
+              v3
+            ,
+            Run.opt
+              (fun v -> Run.trans_token (Run.matcher_token v))
+              v4
+            ,
+            Run.trans_token (Run.matcher_token v5)
+          )
+      | _ -> assert false
+      )
+  | Leaf _ -> assert false
 
 let trans_field_annotation ((kind, body) : mt) : CST.field_annotation =
   match body with
@@ -3682,6 +3933,36 @@ let trans_native_struct_definition ((kind, body) : mt) : CST.native_struct_defin
       )
   | Leaf _ -> assert false
 
+let trans_annotation ((kind, body) : mt) : CST.annotation =
+  match body with
+  | Children v ->
+      (match v with
+      | Seq [v0; v1; v2; v3; v4] ->
+          (
+            Run.trans_token (Run.matcher_token v0),
+            trans_annotation_item (Run.matcher_token v1),
+            Run.repeat
+              (fun v ->
+                (match v with
+                | Seq [v0; v1] ->
+                    (
+                      Run.trans_token (Run.matcher_token v0),
+                      trans_annotation_item (Run.matcher_token v1)
+                    )
+                | _ -> assert false
+                )
+              )
+              v2
+            ,
+            Run.opt
+              (fun v -> Run.trans_token (Run.matcher_token v))
+              v3
+            ,
+            Run.trans_token (Run.matcher_token v4)
+          )
+      | _ -> assert false
+      )
+  | Leaf _ -> assert false
 
 let trans_named_fields ((kind, body) : mt) : CST.named_fields =
   match body with
@@ -6521,14 +6802,65 @@ let trans_source_file ((kind, body) : mt) : CST.source_file =
       )
   | Leaf _ -> assert false
 
+(*
+   Costly operation that translates a whole tree or subtree.
+
+   The first pass translates it into a generic tree structure suitable
+   to guess which node corresponds to each grammar rule.
+   The second pass is a translation into a typed tree where each grammar
+   node has its own type.
+
+   This function is called:
+   - once on the root of the program after removing extras
+     (comments and other nodes that occur anywhere independently from
+     the grammar);
+   - once of each extra node, resulting in its own independent tree of type
+     'extra'.
+*)
+let translate_tree src node trans_x =
+  let matched_tree = Run.match_tree children_regexps src node in
+  Option.map trans_x matched_tree
+
+
+let translate_extra src (node : Tree_sitter_output_t.node) : CST.extra option =
+  match node.type_ with
+  | "whitespace" ->
+      (match translate_tree src node trans_whitespace with
+      | None -> None
+      | Some x -> Some (`Whitespace (Run.get_loc node, x)))
+  | "line_comment" ->
+      (match translate_tree src node trans_line_comment with
+      | None -> None
+      | Some x -> Some (`Line_comment (Run.get_loc node, x)))
+  | "block_comment" ->
+      (match translate_tree src node trans_block_comment with
+      | None -> None
+      | Some x -> Some (`Block_comment (Run.get_loc node, x)))
+  | "newline" ->
+      (match translate_tree src node trans_newline with
+      | None -> None
+      | Some x -> Some (`Newline (Run.get_loc node, x)))
+  | "annotation" ->
+      (match translate_tree src node trans_annotation with
+      | None -> None
+      | Some x -> Some (`Annotation (Run.get_loc node, x)))
+  | _ -> None
+
+let translate_root src root_node =
+  translate_tree src root_node trans_source_file
+
 let parse_input_tree input_tree =
   let orig_root_node = Tree_sitter_parsing.root input_tree in
   let src = Tree_sitter_parsing.src input_tree in
   let errors = Run.extract_errors src orig_root_node in
-  let root_node = Run.remove_extras ~extras orig_root_node in
-  let matched_tree = Run.match_tree children_regexps src root_node in
-  let opt_program = Option.map trans_source_file matched_tree in
-  Parsing_result.create src opt_program errors
+  let opt_program, extras =
+     Run.translate
+       ~extras
+       ~translate_root:(translate_root src)
+       ~translate_extra:(translate_extra src)
+       orig_root_node
+  in
+  Parsing_result.create src opt_program extras errors
 
 let string ?src_file contents =
   let input_tree = parse_source_string ?src_file contents in
